@@ -612,6 +612,13 @@ nlu:
     - Can you make sandwiches?
     - Can you please send me an uber
     - ofif fsdfafsfs
+- intent: convert_money
+  examples: |
+    - I want to convert money
+    - I want to convert money from [₽](currency) to [$](currency)
+    - I want to convert money from [$](currency) to [₽](currency)
+    - convert money
+    - convert
 - synonym: credit
   examples: |
     - credit card

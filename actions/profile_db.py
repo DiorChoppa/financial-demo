@@ -10,6 +10,7 @@ from random import choice, randrange, sample, randint
 from numpy import arange
 from datetime import datetime, timedelta
 import pytz
+from currency_converter import CurrencyConverter
 
 utc = pytz.UTC
 
@@ -80,6 +81,17 @@ class RecipientRelationship(Base):
     account_id = Column(Integer)
     recipient_account_id = Column(Integer)
     recipient_nickname = Column(String(255))
+    
+class Balance(Base):
+    """Valid recipients table. `user`, `recipient_account_id` are `Account.id`'s"""
+
+    __tablename__ = "balance"
+    id = Column(Integer, primary_key=True)
+    account_id = Column(String(256))
+    usd_balance = Column(String(256))
+    eur_balance = Column(String(256))
+    rub_balance = Column(String(256))
+    session_id = Column(String(256))
 
 
 def create_database(database_engine: Engine, database_name: Text):
@@ -109,6 +121,7 @@ class ProfileDB:
         Transaction.__table__.create(self.engine, checkfirst=True)
         RecipientRelationship.__table__.create(self.engine, checkfirst=True)
         Account.__table__.create(self.engine, checkfirst=True)
+        Balance.__table__.create(self.engine, checkfirst=True)
 
     def get_account(self, id: int):
         """Get an `Account` object based on an `Account.id`"""
@@ -183,20 +196,69 @@ class ProfileDB:
 
     def get_account_balance(self, session_id: Text):
         """Get the account balance for an account"""
-        account_number = self.get_account_number(
-            self.get_account_from_session_id(session_id)
-        )
-        spent = float(
-            self.session.query(sa.func.sum(Transaction.amount))
-            .filter(Transaction.from_account_number == account_number)
-            .all()[0][0]
-        )
-        earned = float(
-            self.session.query(sa.func.sum(Transaction.amount))
-            .filter(Transaction.to_account_number == account_number)
-            .all()[0][0]
-        )
-        return earned - spent
+        account_number = self.get_account_number(self.get_account_from_session_id(session_id))
+        try:
+            balance_usd = float(self.session.query(Balance.usd_balance).filter(Balance.account_id == str(int(account_number))).first()[0])
+            balance_eur = float(self.session.query(Balance.eur_balance).filter(Balance.account_id == str(int(account_number))).first()[0])
+            balance_rub = float(self.session.query(Balance.rub_balance).filter(Balance.account_id == str(int(account_number))).first()[0])
+            
+        except:
+            balance_usd = 9999.00
+            balance_eur = 9999.00
+            balance_rub = 9999.00
+            self.session.add(Balance(account_id=int(account_number), usd_balance=str(balance_usd), eur_balance=str(balance_eur), rub_balance=str(balance_rub), session_id=session_id))
+            self.session.commit()
+            
+        balance_final = {"$":balance_usd, "€":balance_eur, "₽":balance_rub}
+        return balance_final
+    
+    def update_balance(self, account_id: Text, amount: float, from_currency: Text, to_currency: Text):
+        if from_currency == '$':
+            balance_usd = float(self.session.query(Balance.usd_balance).filter(Balance.account_id == str(int(account_id))).first()[0])
+            self.session.query(Balance).filter(Balance.account_id == str(int(account_id))).update({Balance.usd_balance: str(balance_usd - amount)}, synchronize_session = False)
+            if to_currency == '$':
+                add_amount = amount
+                self.session.query(Balance).filter(Balance.account_id == str(int(account_id))).update({Balance.usd_balance: str(balance_usd + add_amount)}, synchronize_session = False)
+            elif to_currency == '€':
+                balance_eur = float(self.session.query(Balance.eur_balance).filter(Balance.account_id == str(int(account_id))).first()[0])
+                add_amount = CurrencyConverter().convert(amount, 'USD', 'EUR')
+                self.session.query(Balance).filter(Balance.account_id == str(int(account_id))).update({Balance.eur_balance: str(balance_eur + add_amount)}, synchronize_session = False)
+            elif to_currency == '₽':
+                balance_rub = float(self.session.query(Balance.rub_balance).filter(Balance.account_id == str(int(account_id))).first()[0])
+                add_amount = amount * 80
+                self.session.query(Balance).filter(Balance.account_id == str(int(account_id))).update({Balance.rub_balance: str(balance_rub + add_amount)}, synchronize_session = False)
+                
+        elif from_currency == '€':
+            balance_eur = float(self.session.query(Balance.eur_balance).filter(Balance.account_id == str(int(account_id))).first()[0])
+            self.session.query(Balance).filter(Balance.account_id == str(int(account_id))).update({Balance.eur_balance: str(balance_eur - amount)}, synchronize_session = False)
+            if to_currency == '$':
+                balance_usd = float(self.session.query(Balance.usd_balance).filter(Balance.account_id == str(int(account_id))).first()[0])
+                add_amount = CurrencyConverter().convert(amount, 'EUR', 'USD')
+                self.session.query(Balance).filter(Balance.account_id == str(int(account_id))).update({Balance.usd_balance: str(balance_usd + add_amount)}, synchronize_session = False)
+            elif to_currency == '€':
+                add_amount = amount
+                self.session.query(Balance).filter(Balance.account_id == str(int(account_id))).update({Balance.eur_balance: str(balance_eur + add_amount)}, synchronize_session = False)
+            elif to_currency == '₽':
+                balance_rub = float(self.session.query(Balance.rub_balance).filter(Balance.account_id == str(int(account_id))).first()[0])
+                add_amount = amount * 85
+                self.session.query(Balance).filter(Balance.account_id == str(int(account_id))).update({Balance.rub_balance: str(balance_rub + add_amount)}, synchronize_session = False)
+                
+        else:
+            balance_rub = float(self.session.query(Balance.rub_balance).filter(Balance.account_id == str(int(account_id))).first()[0])
+            self.session.query(Balance).filter(Balance.account_id == str(int(account_id))).update({Balance.rub_balance: str(balance_rub - amount)}, synchronize_session = False)
+            if to_currency == '$':
+                balance_usd = float(self.session.query(Balance.usd_balance).filter(Balance.account_id == str(int(account_id))).first()[0])
+                add_amount = amount / 80
+                self.session.query(Balance).filter(Balance.account_id == str(int(account_id))).update({Balance.usd_balance: str(balance_usd + add_amount)}, synchronize_session = False)
+            elif to_currency == '€':
+                balance_eur = float(self.session.query(Balance.eur_balance).filter(Balance.account_id == str(int(account_id))).first()[0])
+                add_amount = amount / 85
+                self.session.query(Balance).filter(Balance.account_id == str(int(account_id))).update({Balance.eur_balance: str(balance_eur + add_amount)}, synchronize_session = False)
+            elif to_currency == '₽':
+                add_amount = amount
+                self.session.query(Balance).filter(Balance.account_id == str(int(account_id))).update({Balance.rub_balance: str(balance_rub + add_amount)}, synchronize_session = False)
+                
+        self.session.commit()
 
     def get_currency(self, session_id: Text):
         """Get the currency for an account"""

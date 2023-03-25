@@ -20,7 +20,8 @@ stories:
     - next_form_name: null
   - action: cc_payment_form
   - active_loop: cc_payment_form
-    
+
+
 - story: pay credit card + switch to search transactions, affirm + switch back, deny
   steps:
   - intent: pay_cc
@@ -128,6 +129,61 @@ stories:
   - slot_was_set:
     - requested_slot: null
   - action: action_transfer_money
+  - action: action_switch_back_ask
+  - slot_was_set:
+    - previous_form_name: null
+  - intent: affirm
+  - action: cc_payment_form
+  - active_loop: cc_payment_form
+
+- story: pay credit card + switch to convert money, affirm + switch back, deny
+  steps:
+  - intent: pay_cc
+  - action: cc_payment_form
+  - active_loop: cc_payment_form
+  - intent: convert_money
+  - action: action_switch_forms_ask
+  - slot_was_set:
+    - next_form_name: convert_money_form
+  - intent: affirm
+  - action: action_switch_forms_affirm
+  - slot_was_set:
+    - next_form_name: null
+  - slot_was_set:
+    - previous_form_name: cc_payment_form
+  - action: convert_money_form
+  - active_loop: convert_money_form
+  - active_loop: null
+  - slot_was_set:
+    - requested_slot: null
+  - action: action_convert_money
+  - action: action_switch_back_ask
+  - slot_was_set:
+    - previous_form_name: null
+  - intent: deny
+  - action: utter_ask_whatelse
+
+- story: pay credit card + switch to convert money, affirm + switch back, affirm
+  steps:
+  - intent: pay_cc
+  - action: cc_payment_form
+  - active_loop: cc_payment_form
+  - intent: convert_money
+  - action: action_switch_forms_ask
+  - slot_was_set:
+    - next_form_name: convert_money_form
+  - intent: affirm
+  - action: action_switch_forms_affirm
+  - slot_was_set:
+    - next_form_name: null
+  - slot_was_set:
+    - previous_form_name: cc_payment_form
+  - action: convert_money_form
+  - active_loop: convert_money_form
+  - active_loop: null
+  - slot_was_set:
+    - requested_slot: null
+  - action: action_convert_money
   - action: action_switch_back_ask
   - slot_was_set:
     - previous_form_name: null

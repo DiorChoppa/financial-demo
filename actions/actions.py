@@ -546,6 +546,83 @@ class ValidateTransferMoneyForm(CustomFormValidationAction):
         return {"zz_confirm_form": None}
 
 
+class ActionConvertMoney(Action):
+    """Converts Money."""
+
+    def name(self) -> Text:
+        """Unique identifier of the action"""
+        return "action_convert_money"
+
+    async def run(
+            self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict
+    ) -> List[EventType]:
+        """Executes the action"""
+        slots = {
+            "AA_CONTINUE_FORM": None,
+            "zz_confirm_form": None,
+            "currency_from": None,
+            "currency_to": None,
+            "amount-of-money": None,
+        }
+
+        if tracker.get_slot("zz_confirm_form") == "yes":
+            amount_of_money = float(tracker.get_slot("amount-of-money"))
+            from_currency = tracker.get_slot("currency_from")
+            to_currency = tracker.get_slot("currency_to")
+            
+            account_number = profile_db.get_account_number(profile_db.get_account_from_session_id(tracker.sender_id))
+			
+            profile_db.update_balance(account_number, amount_of_money, from_currency, to_currency)
+            dispatcher.utter_message(response="utter_convert_complete")
+        else:
+            dispatcher.utter_message(response="utter_convert_cancelled")
+
+        return [SlotSet(slot, value) for slot, value in slots.items()]
+
+
+class ValidateConvertMoneyForm(CustomFormValidationAction):
+    """Validates Slots of the convert_money_form"""
+
+    def name(self) -> Text:
+        """Unique identifier of the action"""
+        return "validate_convert_money_form"
+
+    async def validate_amount_of_money(
+        self,
+        value: Text,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        domain: Dict[Text, Any],
+    ) -> Dict[Text, Any]:
+        """Validates value of 'amount-of-money' slot"""
+        account_balance = profile_db.get_account_balance(tracker.sender_id)
+        try:
+            entity = get_entity_details(
+                tracker, "amount-of-money"
+            ) or get_entity_details(tracker, "number")
+            amount_currency = parse_duckling_currency(entity)
+            if not amount_currency:
+                raise TypeError
+            
+            return amount_currency
+        except (TypeError, AttributeError):
+            dispatcher.utter_message(response="utter_no_payment_amount")
+            return {"amount-of-money": None}
+
+    async def validate_zz_confirm_form(
+        self,
+        value: Text,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        domain: Dict[Text, Any],
+    ) -> Dict[Text, Any]:
+        """Validates value of 'zz_confirm_form' slot"""
+        if value in ["yes", "no"]:
+            return {"zz_confirm_form": value}
+
+        return {"zz_confirm_form": None}
+
+
 class ActionShowBalance(Action):
     """Shows the balance of bank or credit card accounts"""
 
@@ -589,20 +666,28 @@ class ActionShowBalance(Action):
                     )
         else:
             # show bank account balance
-            account_balance = profile_db.get_account_balance(tracker.sender_id)
-            amount = tracker.get_slot("amount_transferred")
-            if amount:
-                amount = float(tracker.get_slot("amount_transferred"))
-                init_account_balance = account_balance + amount
+            account_balance_dict = profile_db.get_account_balance(tracker.sender_id)
+            # amount = tracker.get_slot("amount_transferred")
+            if account_balance_dict:
                 dispatcher.utter_message(
-                    response="utter_changed_account_balance",
-                    init_account_balance=f"{init_account_balance:.2f}",
-                    account_balance=f"{account_balance:.2f}",
+                    response="utter_account_balance",
+                    usd_account_balance=f"{account_balance_dict['$']:.2f}",
+                    eur_account_balance=f"{account_balance_dict['€']:.2f}",
+                    rub_account_balance=f"{account_balance_dict['₽']:.2f}"
                 )
+                # amount = float(tracker.get_slot("amount_transferred"))
+                # init_account_balance = account_balance + amount
+                # dispatcher.utter_message(
+                #     response="utter_changed_account_balance",
+                #     init_account_balance=f"{init_account_balance:.2f}",
+                #     account_balance=f"{account_balance:.2f}",
+                # )
             else:
                 dispatcher.utter_message(
                     response="utter_account_balance",
-                    init_account_balance=f"{account_balance:.2f}",
+                    usd_account_balance=f"{10000.00}",
+                    eur_account_balance=f"{10000.00}",
+                    rub_account_balance=f"{10000.00}"
                 )
 
         events = []
@@ -692,6 +777,7 @@ class ActionSessionStart(Action):
 
         # when restarting most slots should be reset
         relevant_slots = ["currency"]
+		# relevant_slots = ["currency", "usd", "eur", "rub"]
 
         return [
             SlotSet(
@@ -720,6 +806,9 @@ class ActionSessionStart(Action):
 
         # initialize slots from mock profile
         events.append(SlotSet("currency", currency))
+        # events.append(SlotSet("usd", "$"))
+        # events.append(SlotSet("eur", "€"))
+        # events.append(SlotSet("rub", "₽"))
 
         # add `action_listen` at the end
         events.append(ActionExecuted("action_listen"))
